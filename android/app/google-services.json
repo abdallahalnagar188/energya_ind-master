@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "747519051318",
+    "project_id": "energya-d13a8",
+    "storage_bucket": "energya-d13a8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:747519051318:android:df9c7b042708b22b7fba97",
+        "android_client_info": {
+          "package_name": "com.energya.app.ind"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDhIVhZLRRnqBT2ln7wSCFz2GcuIv2THZM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
