@@ -145,4 +145,52 @@ List<Map<String, dynamic>> authos = [
     'autho': 'Galvanization',
     'dir': [5, 6]
   },
+  {
+    'autho': 'Cutting',
+    'dir': [3] // Cutting → Visual
+  },
 ];
+
+/// Returns the correct authos list based on project type.
+/// T-L projects use Cutting flow, others use standard SS-L flow.
+List<Map<String, dynamic>> getAuthosForProject(String filePath) {
+  if (AuthorityModel.isTLProject(filePath)) {
+    // T-L flow: Cutting → Visual → Follow-Up → Painting/Dispatch/Galvanization
+    return [
+      {
+        'autho': 'Cutting',
+        'dir': [3]
+      }, // → Visual
+      {
+        'autho': 'Assembly',
+        'dir': [2]
+      }, // placeholder (unused for T-L)
+      {
+        'autho': 'Welding',
+        'dir': [3]
+      }, // placeholder (unused for T-L)
+      {
+        'autho': 'Visual',
+        'dir': [4]
+      }, // → Follow-Up
+      {
+        'autho': 'Follow-Up',
+        'dir': [5, 6, 7]
+      }, // → Painting/Dispatch/Galvanization
+      {
+        'autho': 'Painting',
+        'dir': [6]
+      }, // → Dispatch
+      {'autho': 'Dispatch', 'dir': []}, // end
+      {
+        'autho': 'Galvanization',
+        'dir': [5, 6]
+      }, // → Painting/Dispatch
+      {
+        'autho': 'Cutting',
+        'dir': [3]
+      }, // index 8
+    ];
+  }
+  return authos;
+}

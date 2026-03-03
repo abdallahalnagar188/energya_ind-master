@@ -49,6 +49,12 @@ class ProductionListState {
         onTapAction: () =>
             context.NavigatePushTo(AppRouters.kGlavonizationInsertPage),
       ),
+      ProductionItem(
+        imageAsset: 'images/prepraction.png',
+        productionName: 'Cutting',
+        onTapAction: () =>
+            context.NavigatePushTo(AppRouters.kCuttingInsertPage),
+      ),
     ];
   }
 }

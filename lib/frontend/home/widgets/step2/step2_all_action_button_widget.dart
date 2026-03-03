@@ -251,7 +251,10 @@ class _AllActionPushButtonWidgetState extends State<AllActionPushButtonWidget> {
       bool isCurrentStep =
           selectedRows.any((row) => row.contains(widget.title));
 
-      List<int> dirs = authos.firstWhere(
+      // Use project-aware authos for state transitions
+      var projectAuthos = getAuthosForProject(excel.selectedFileLocalPath);
+
+      List<int> dirs = projectAuthos.firstWhere(
         (a) => a['autho'] == widget.title,
         orElse: () => {'dir': []},
       )['dir'] as List<int>;
@@ -357,7 +360,7 @@ class _AllActionPushButtonWidgetState extends State<AllActionPushButtonWidget> {
                         await excel.checkAndUpdateStates(
                           context,
                           0,
-                          authos.firstWhere(
+                          projectAuthos.firstWhere(
                             (a) => a['autho'] == widget.title,
                             orElse: () => {},
                           )['dir'] as List<int>,

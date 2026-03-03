@@ -43,6 +43,7 @@ class _HomeViewBodyState extends State<HomeViewBody> {
       children: [
         HeadLineBar(
           headLineText: 'Production',
+          secondeHeadLineText: 'View',
           onTapAction: () => context.NavigatePushTo(
             AppRouters.kProductionGridViewPage,
           ),

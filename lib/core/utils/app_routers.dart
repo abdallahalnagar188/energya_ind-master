@@ -2,6 +2,7 @@ import 'package:energya_ind/frontend/home/view/engineering/engineering_view.dart
 import 'package:energya_ind/frontend/home/view/material/view/edit_material_list.dart';
 import 'package:energya_ind/frontend/home/view/material/view/material_list_add_steps.dart';
 import 'package:energya_ind/frontend/home/view/production/screen/assemplay_insert_page.dart';
+import 'package:energya_ind/frontend/home/view/production/screen/cutting_insert_page.dart';
 import 'package:energya_ind/frontend/home/view/production/screen/dispatch_insert_page.dart';
 import 'package:energya_ind/frontend/home/view/production/screen/followup_insert_page.dart';
 import 'package:energya_ind/frontend/home/view/production/screen/glavonization_insert_page.dart';
@@ -43,6 +44,8 @@ abstract class AppRouters {
   static String kDispatchInsertPage = '/DispatchInsertPage';
 
   static String kPaintingInsertPage = '/PaintingInsertPage';
+
+  static String kCuttingInsertPage = '/CuttingInsertPage';
 
   static String kEngineeringViewPage = '/EngineeringViewPage';
 
@@ -105,6 +108,10 @@ abstract class AppRouters {
       GoRoute(
         path: kPaintingInsertPage,
         builder: (context, state) => const PaintingInsertPage(),
+      ),
+      GoRoute(
+        path: kCuttingInsertPage,
+        builder: (context, state) => const CuttingInsertPage(),
       ),
       GoRoute(
         path: kEngineeringViewPage,

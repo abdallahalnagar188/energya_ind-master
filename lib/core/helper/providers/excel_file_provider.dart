@@ -31,6 +31,10 @@ class ExcelFileProvider with ChangeNotifier {
     FilePickerResult? result,
     String? firebasePath,
   }) async {
+    projectName = projectName.replaceAll(' ', '');
+    orderName = orderName.replaceAll(' ', '');
+    releaseName = releaseName.replaceAll(' ', '');
+
     const String appFolderPath = '/storage/emulated/0/Energya';
     await _createFolderIfNeeded(appFolderPath);
 
@@ -41,8 +45,7 @@ class ExcelFileProvider with ChangeNotifier {
     await _createFolderIfNeeded(orderFolderPath);
 
     final releaseFilePath =
-        '$orderFolderPath/${generateFileName(projectName, orderName, releaseName)}'
-            .replaceAll(' ', '');
+        '$orderFolderPath/${generateFileName(projectName, orderName, releaseName)}';
     final releaseFile = File(releaseFilePath);
 
     if (await releaseFile.exists()) {
@@ -113,6 +116,55 @@ class ExcelFileProvider with ChangeNotifier {
     load = false;
     notifyListeners();
     return completer.future;
+  }
+
+  Future<List<Map<String, dynamic>>> checkFilesIfinLocal(
+    Map<String, dynamic> filteredTags,
+  ) async {
+    List<Map<String, dynamic>> fileStatusList = [];
+
+    for (var projectEntry in filteredTags.entries) {
+      String projectName = projectEntry.key;
+      Map<String, List<Map<String, dynamic>>> ordersMap = projectEntry.value;
+
+      for (var orderEntry in ordersMap.entries) {
+        String orderName = orderEntry.key;
+        List<Map<String, dynamic>> releases = orderEntry.value;
+
+        for (var release in releases) {
+          String releaseName = release['release'];
+          String firebasePath =
+              release['file']['filePath']; // المسار في Firebase
+
+          String safeProjectName = projectName.replaceAll(' ', '');
+          String safeOrderName = orderName.replaceAll(' ', '');
+          String safeReleaseName = releaseName.replaceAll(' ', '');
+
+          // تحديد المسار المحلي للفايل مع الامتداد
+          String localFilePath =
+              "/storage/emulated/0/Energya/$safeProjectName/$safeOrderName/$safeProjectName-$safeOrderName-$safeReleaseName.xlsx";
+
+          File localFile = File(localFilePath);
+          bool isLocal = await localFile.exists();
+
+          pr(isLocal
+              ? '✅ الملف موجود محليًا: $localFilePath'
+              : '⬇️ الملف غير موجود، يحتاج إلى تحميل: $localFilePath');
+
+          // إضافة بيانات الملف إلى القائمة
+          fileStatusList.add({
+            "isLocal": isLocal,
+            "projectName": projectName,
+            "orderName": orderName,
+            "releaseName": releaseName,
+            "firebasePath": firebasePath,
+            "localFilePath": localFilePath, // إضافة المسار المحلي بعد التصحيح
+          });
+        }
+      }
+    }
+
+    return fileStatusList;
   }
 
   //if local uploaded.
@@ -187,19 +239,35 @@ class ExcelFileProvider with ChangeNotifier {
       return;
     }
     try {
-      // Step 1: Upload file to Firebase Storage
-      File file = File(filePath);
-      String storagePath = 'files/$project/$order/$fileName';
-
-      final fileUrl = await _uploadFileToFirebase(file, storagePath);
-      pr('File uploaded successfully. File URL: $fileUrl');
-
       // الحصول على المرجعية للمشروع والـ order
       CollectionReference tagsCollection =
           FirebaseFirestore.instance.collection('tags');
+
+      QuerySnapshot tagsSnapshot = await tagsCollection.get();
+      String actualProjectId = tagsSnapshot.docs
+          .firstWhere((doc) =>
+              doc.id.replaceAll(' ', '') == project.replaceAll(' ', ''))
+          .id;
+
+      DocumentReference projectDoc = tagsCollection.doc(actualProjectId);
+
+      QuerySnapshot ordersSnapshot =
+          await projectDoc.collection('orders').get();
+      String actualOrderId = ordersSnapshot.docs
+          .firstWhere(
+              (doc) => doc.id.replaceAll(' ', '') == order.replaceAll(' ', ''))
+          .id;
+
       DocumentReference orderDoc =
-          tagsCollection.doc(project).collection('orders').doc(order);
+          projectDoc.collection('orders').doc(actualOrderId);
       DocumentSnapshot orderSnapshot = await orderDoc.get();
+
+      // Step 1: Upload file to Firebase Storage
+      File file = File(filePath);
+      String storagePath = 'files/$actualProjectId/$actualOrderId/$fileName';
+
+      final fileUrl = await _uploadFileToFirebase(file, storagePath);
+      pr('File uploaded successfully. File URL: $fileUrl');
 
       // استرجاع قائمة releases
       List<dynamic> releases = List.from(orderSnapshot['releases']);

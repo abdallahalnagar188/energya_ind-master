@@ -64,6 +64,13 @@ class ExcelProvider with ChangeNotifier {
     }).toList();
   }
 
+  /// Returns true if currentStep is the initial step for this project type.
+  bool _isInitialStep(String currentStep) {
+    bool isTL = AuthorityModel.isTLProject(selectedFileLocalPath);
+    return (isTL && currentStep == 'Cutting') ||
+        (!isTL && currentStep == AuthorityModel.authos[0].name);
+  }
+
   void filterExcelData(String currentStep) {
     print(currentStep);
     if (allExcelData.isEmpty) return;
@@ -75,7 +82,7 @@ class ExcelProvider with ChangeNotifier {
             .where((row) => !row.contains("hold") && !row.contains("HOLD"))
             .toList();
     pr('📂unHold: ${unHoldExcelData.length}');
-    if (currentStep == AuthorityModel.authos[0].name) {
+    if (_isInitialStep(currentStep)) {
       if (headerRow.contains(AppStrings.stateColumn)) {
         underExcelData = [headerRow] +
             allExcelData.skip(1).where((row) {
@@ -92,7 +99,7 @@ class ExcelProvider with ChangeNotifier {
     dispatchedExcelData = [headerRow] +
         allExcelData.where((row) => row.contains("✓✓Dispatched")).toList();
     pr('📂dispatched: ${dispatchedExcelData.length}');
-    if (currentStep == AuthorityModel.authos[0].name) {
+    if (_isInitialStep(currentStep)) {
       doneExcelData = [headerRow] +
           allExcelData.where((row) {
             return row.any((cell) => cell.toString().contains("✅"));
@@ -116,7 +123,7 @@ class ExcelProvider with ChangeNotifier {
     String? currentStep,
   }) {
     if (filterType == "All" && currentStep != null) {
-      if (currentStep == AuthorityModel.authos[0].name) {
+      if (_isInitialStep(currentStep)) {
         enabledExcelRows = List.generate(allExcelData.length, (index) {
           List<String> row = allExcelData[index];
           bool isDone = doneExcelData.contains(row);
@@ -136,7 +143,7 @@ class ExcelProvider with ChangeNotifier {
       }
       selectedRows = List.generate(enabledExcelRows.length, (index) => false);
     } else if (filterType == "Under-$currentStep" && currentStep != null) {
-      if (currentStep == AuthorityModel.authos[0].name) {
+      if (_isInitialStep(currentStep)) {
         enabledExcelRows = List.generate(allExcelData.length, (index) {
           List<String> row = allExcelData[index];
           bool isDone = doneExcelData.contains(row);
@@ -172,14 +179,12 @@ class ExcelProvider with ChangeNotifier {
   }
 
   double calculateTotalWeight(List<List<String>>? excelData) {
-    if (excelData == null) return 0.0;
-    
+    if (excelData == null || excelData.isEmpty) return 0.0;
+
     print("first row: ${excelData.first}");
     print(
         "index of weight: ${excelData.first.indexOf(AppStrings.markColumnWeight)}");
-    int columnIndex = excelData.isNotEmpty
-        ? excelData.first.indexOf(AppStrings.markColumnWeight)
-        : -1;
+    int columnIndex = excelData.first.indexOf(AppStrings.markColumnWeight);
     if (columnIndex == -1) {
       calculatePreprationTotalWeight(excelData);
       notifyListeners();
@@ -205,14 +210,15 @@ class ExcelProvider with ChangeNotifier {
   }
 
   double calculatePreprationTotalWeight(List<List<String>>? excelData) {
-    int column1Index = excelData != null && excelData.isNotEmpty
-        ? excelData.first.indexOf(AppStrings.markColumnPrep1Weight)
-        : -1;
-    int column2Index = excelData != null && excelData.isNotEmpty
-        ? excelData.first.indexOf(AppStrings.markColumnPrep2Weight)
-        : -1;
+    if (excelData == null || excelData.isEmpty) return 0.0;
+
+    int column1Index =
+        excelData.first.indexOf(AppStrings.markColumnPrep1Weight);
+    int column2Index =
+        excelData.first.indexOf(AppStrings.markColumnPrep2Weight);
+
     if (column1Index == -1 && column2Index == -1) return 0.0;
-    double total = (excelData ?? []).skip(1).fold(0.0, (tot, row) {
+    double total = excelData.skip(1).fold(0.0, (tot, row) {
       double value1 = double.tryParse(row[column1Index]) ?? 0.0;
       double value2 = double.tryParse(row[column2Index]) ?? 0.0;
       return tot + (value1 * value2);
@@ -366,9 +372,32 @@ class ExcelProvider with ChangeNotifier {
       return;
     }
     try {
+      // الحصول على المرجعية للمشروع والـ order
+      CollectionReference tagsCollection =
+          FirebaseFirestore.instance.collection('tags');
+
+      QuerySnapshot tagsSnapshot = await tagsCollection.get();
+      String actualProjectId = tagsSnapshot.docs
+          .firstWhere((doc) =>
+              doc.id.replaceAll(' ', '') == project.replaceAll(' ', ''))
+          .id;
+
+      DocumentReference projectDoc = tagsCollection.doc(actualProjectId);
+
+      QuerySnapshot ordersSnapshot =
+          await projectDoc.collection('orders').get();
+      String actualOrderId = ordersSnapshot.docs
+          .firstWhere(
+              (doc) => doc.id.replaceAll(' ', '') == order.replaceAll(' ', ''))
+          .id;
+
+      DocumentReference orderDoc =
+          projectDoc.collection('orders').doc(actualOrderId);
+      DocumentSnapshot orderSnapshot = await orderDoc.get();
+
       // Step 1: Upload file to Firebase Storage
       File file = File(filePath);
-      String storagePath = 'files/$project/$order/$fileName';
+      String storagePath = 'files/$actualProjectId/$actualOrderId/$fileName';
 
       final fileUrl = await _fileServices.uploadFileToFirebaseWithProgress(
         file,
@@ -377,13 +406,6 @@ class ExcelProvider with ChangeNotifier {
       );
 
       pr('File uploaded successfully. File URL: $fileUrl');
-
-      // الحصول على المرجعية للمشروع والـ order
-      CollectionReference tagsCollection =
-          FirebaseFirestore.instance.collection('tags');
-      DocumentReference orderDoc =
-          tagsCollection.doc(project).collection('orders').doc(order);
-      DocumentSnapshot orderSnapshot = await orderDoc.get();
 
       // استرجاع قائمة releases
       List<dynamic> releases = List.from(orderSnapshot['releases']);
@@ -394,7 +416,8 @@ class ExcelProvider with ChangeNotifier {
 
       // التحقق إذا كان الـ release موجودًا
       for (var r in releases) {
-        if (r['release'] == release) {
+        String rRelease = r['release'].toString();
+        if (rRelease.replaceAll(' ', '') == release.replaceAll(' ', '')) {
           existingRelease = Map<String, dynamic>.from(r);
           break;
         }
@@ -447,15 +470,36 @@ class ExcelProvider with ChangeNotifier {
     try {
       CollectionReference tagsCollection =
           FirebaseFirestore.instance.collection('tags');
+
+      // We need to find the correct project ID because the 'project' passed here
+      // might be locally sanitized (spaces removed), while the Firestore ID has spaces.
+      QuerySnapshot tagsSnapshot = await tagsCollection.get();
+      String actualProjectId = tagsSnapshot.docs
+          .firstWhere((doc) =>
+              doc.id.replaceAll(' ', '') == project.replaceAll(' ', ''))
+          .id;
+
+      DocumentReference projectDoc = tagsCollection.doc(actualProjectId);
+
+      // We need to find the correct order ID because the 'order' passed here
+      // might be locally sanitized (spaces removed), while the Firestore ID has spaces.
+      QuerySnapshot ordersSnapshot =
+          await projectDoc.collection('orders').get();
+      String actualOrderId = ordersSnapshot.docs
+          .firstWhere(
+              (doc) => doc.id.replaceAll(' ', '') == order.replaceAll(' ', ''))
+          .id;
+
       DocumentReference orderDoc =
-          tagsCollection.doc(project).collection('orders').doc(order);
+          projectDoc.collection('orders').doc(actualOrderId);
       DocumentSnapshot orderSnapshot = await orderDoc.get();
 
       List<dynamic> releases = List.from(orderSnapshot['releases']);
       Map<String, dynamic>? existingRelease;
 
       for (var r in releases) {
-        if (r['release'] == release) {
+        String rRelease = r['release'].toString();
+        if (rRelease.replaceAll(' ', '') == release.replaceAll(' ', '')) {
           existingRelease = Map<String, dynamic>.from(r);
           break;
         }
@@ -799,6 +843,51 @@ class ExcelProvider with ChangeNotifier {
     return null;
   }
 
+  /// Updates the QTY column value for a specific row in the Excel file.
+  /// Used by Cutting → Visual push to write back the remaining quantity.
+  Future<void> updateQtyInExcel(
+    BuildContext context,
+    int rowIndex,
+    int newQty,
+  ) async {
+    var file = File(selectedFileLocalPath);
+    var bytes = file.readAsBytesSync();
+    var excel = Excel.decodeBytes(bytes);
+
+    String sheetName = excel.tables.keys.first;
+    Sheet sheet = excel[sheetName];
+
+    // Find the QTY column index
+    int qtyColumnIndex = -1;
+    for (int colIndex = 0; colIndex < sheet.rows[0].length; colIndex++) {
+      var cellValue = sheet
+              .cell(CellIndex.indexByColumnRow(
+                  columnIndex: colIndex, rowIndex: 0))
+              .value
+              ?.toString()
+              .toUpperCase() ??
+          '';
+      if (cellValue.contains('QTY') && !cellValue.contains('POS QTY')) {
+        qtyColumnIndex = colIndex;
+        break;
+      }
+    }
+
+    if (qtyColumnIndex == -1) {
+      pr('❌ QTY column not found');
+      return;
+    }
+
+    sheet
+        .cell(CellIndex.indexByColumnRow(
+            columnIndex: qtyColumnIndex, rowIndex: rowIndex))
+        .value = TextCellValue(newQty.toString());
+
+    pr('✅ QTY updated to $newQty at row $rowIndex');
+    await saveChanges(context, excel);
+    notifyListeners();
+  }
+
   Future<void> checkAndUpdateStates(
     BuildContext context,
     int rowIndex,
@@ -833,6 +922,12 @@ class ExcelProvider with ChangeNotifier {
       }
     }
 
+    // Use project-aware initial state
+    String initialState = AuthorityModel.getInitialState(selectedFileLocalPath);
+    // Use project-aware authos for state transitions
+    List<Map<String, dynamic>> projectAuthos =
+        getAuthosForProject(selectedFileLocalPath);
+
     if (!hasStatesColumn) {
       statesColumnIndex = sheet.maxColumns;
 
@@ -847,9 +942,9 @@ class ExcelProvider with ChangeNotifier {
         sheet
             .cell(CellIndex.indexByColumnRow(
                 columnIndex: statesColumnIndex, rowIndex: row))
-            .value = TextCellValue('Prepration');
+            .value = TextCellValue(initialState);
       }
-      pr('All STATES values Filled by: Prepration');
+      pr('All STATES values Filled by: $initialState');
     }
 
     if (selectedRows == null) {
@@ -857,7 +952,7 @@ class ExcelProvider with ChangeNotifier {
         sheet,
         rowIndex,
         statesColumnIndex,
-        authos,
+        projectAuthos,
         nextDirs,
         selectedDirId: selectedDirId,
       );
@@ -867,7 +962,7 @@ class ExcelProvider with ChangeNotifier {
           sheet,
           allExcelData.indexOf(row),
           statesColumnIndex,
-          authos,
+          projectAuthos,
           nextDirs,
           selectedDirId: selectedDirId,
         );
@@ -919,8 +1014,10 @@ class ExcelProvider with ChangeNotifier {
 
         var nextAuthoEntry = authos[chosenDirId];
         print("nextAutho is : $nextAuthoEntry");
+        String initialState =
+            AuthorityModel.getInitialState(selectedFileLocalPath);
         String nextState =
-            nextAuthoEntry.isNotEmpty ? nextAuthoEntry['autho'] : 'Prepration';
+            nextAuthoEntry.isNotEmpty ? nextAuthoEntry['autho'] : initialState;
         print("next state is: $nextState");
         sheet
             .cell(
@@ -1073,10 +1170,12 @@ class ExcelProvider with ChangeNotifier {
                 null) {
           pr("'تعبئة ال states' 🗣 $headerRow - ${headerRow.length}");
 
+          String initialState =
+              AuthorityModel.getInitialState(selectedFileLocalPath);
           sheet
               .cell(CellIndex.indexByColumnRow(
                   columnIndex: statesColumnIndex, rowIndex: i))
-              .value = TextCellValue(AuthorityModel.authos[0].name);
+              .value = TextCellValue(initialState);
         }
 
         if (weightColumnIndex != -1 &&
@@ -1150,10 +1249,15 @@ class ExcelProvider with ChangeNotifier {
               .cell(CellIndex.indexByColumnRow(
                   columnIndex: markColumnIndex, rowIndex: newRowIndex))
               .value = TextCellValue(markValue);
+          // T-L projects: after merge go to Visual; SS-L: go to Assembly
+          String nextStepAfterMerge =
+              AuthorityModel.isTLProject(selectedFileLocalPath)
+                  ? 'Visual'
+                  : AuthorityModel.authos[1].name;
           sheet
               .cell(CellIndex.indexByColumnRow(
                   columnIndex: statesColumnIndex, rowIndex: newRowIndex))
-              .value = TextCellValue(AuthorityModel.authos[1].name);
+              .value = TextCellValue(nextStepAfterMerge);
           sheet
               .cell(CellIndex.indexByColumnRow(
                   columnIndex: weightColumnIndex, rowIndex: newRowIndex))

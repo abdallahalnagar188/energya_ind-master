@@ -97,5 +97,23 @@ class AuthorityModel {
       name: 'Galvanization',
       dir: [5, 6],
     ),
+    AuthorityModel(
+      name: 'Cutting',
+      dir: [3], // Cutting → Visual
+    ),
   ];
+
+  /// Detects if a project is T-L based on project name in file path.
+  /// Path format: /Energya/{projectName}/{order}/{file}
+  static bool isTLProject(String filePath) {
+    List<String> segments = filePath.split('/');
+    if (segments.length < 3) return false;
+    String projectName = segments[segments.length - 3];
+    return projectName.toUpperCase().startsWith('T-L');
+  }
+
+  /// Returns the initial state name for a project.
+  static String getInitialState(String filePath) {
+    return isTLProject(filePath) ? 'Cutting' : 'Prepration';
+  }
 }

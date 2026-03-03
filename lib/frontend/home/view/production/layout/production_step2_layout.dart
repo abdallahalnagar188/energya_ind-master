@@ -124,6 +124,7 @@ class _ProductionStep2LayoutState extends State<ProductionStep2Layout> {
               totalWeightWidget(context),
               if (selectedCount > 1 &&
                   widget.title != AuthorityModel.authos[0].name &&
+                  widget.title != AuthorityModel.authos[8].name && // Cutting
                   selectedCount > 0 && // تأكد من تحديد صف واحد على الأقل
                   excel.selectedRows
                       .asMap()
@@ -176,7 +177,7 @@ class _ProductionStep2LayoutState extends State<ProductionStep2Layout> {
       ),
     );
   }
- 
+
   Widget _searchWidget() {
     return step2SearchWidget(
       controller: searchController,

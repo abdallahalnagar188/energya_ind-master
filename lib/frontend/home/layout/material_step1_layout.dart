@@ -62,7 +62,9 @@ class _ProductionStepLayoutState extends State<MaterialStep1Layout> {
     _clearSearchState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _fetchAndFilterTags();
-      setState(() {});
+      if (mounted) {
+        setState(() {});
+      }
     });
   }
 
@@ -202,6 +204,15 @@ class _ProductionStepLayoutState extends State<MaterialStep1Layout> {
         borderRadius: 40,
         onTap: () {
           if (excel.selectedFileLocalPath.isNotEmpty) {
+            if (widget.title == 'Cutting') {
+              String fileName = excel.selectedFileLocalPath.split('/').last;
+              if (!fileName.toUpperCase().startsWith('T-L')) {
+                showTopSnackBar(context,
+                    'يجب أن يبدأ اسم الملف بـ T-L في مرحلة التقطيع (Cutting)',
+                    error: true);
+                return;
+              }
+            }
             pr('selected file: ${excel.selectedFileLocalPath}');
             widget.onNext();
           }

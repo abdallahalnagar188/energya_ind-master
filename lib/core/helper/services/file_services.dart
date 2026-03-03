@@ -106,8 +106,11 @@ class FileServices {
   }
 
   String generateLocalFilePath(String project, String order, String release) {
-    return '${AppStrings.appFolderPath}/$project/$order/${generateFileName(project, order, release)}'
-        .replaceAll(' ', '');
+    String safeProjectName = project.replaceAll(' ', '');
+    String safeOrderName = order.replaceAll(' ', '');
+    String safeReleaseName = release.replaceAll(' ', '');
+
+    return '${AppStrings.appFolderPath}/$safeProjectName/$safeOrderName/${generateFileName(safeProjectName, safeOrderName, safeReleaseName)}';
   }
 
   Future<List<List<String>>> readExcelFile({
@@ -410,9 +413,13 @@ class FileServices {
           String firebasePath =
               release['file']['filePath']; // المسار في Firebase
 
+          String safeProjectName = projectName.replaceAll(' ', '');
+          String safeOrderName = orderName.replaceAll(' ', '');
+          String safeReleaseName = releaseName.replaceAll(' ', '');
+
           // تحديد المسار المحلي للفايل مع الامتداد
           String localFilePath =
-              "${AppStrings.appFolderPath}/$projectName/$orderName/$projectName-$orderName-$releaseName.xlsx";
+              "${AppStrings.appFolderPath}/$safeProjectName/$safeOrderName/$safeProjectName-$safeOrderName-$safeReleaseName.xlsx";
 
           File localFile = File(localFilePath);
           bool isLocal = await localFile.exists();
@@ -450,6 +457,10 @@ class FileServices {
     required dynamic Function() endDownLoad,
     required dynamic Function() startProgress,
   }) async {
+    projectName = projectName.replaceAll(' ', '');
+    orderName = orderName.replaceAll(' ', '');
+    releaseName = releaseName.replaceAll(' ', '');
+
     await GlobalFunctions().requestStoragePermission();
     const String appFolderPath = AppStrings.appFolderPath;
     await createFolderIfNeeded(appFolderPath);
@@ -461,8 +472,7 @@ class FileServices {
     await createFolderIfNeeded(orderFolderPath);
 
     final releaseFilePath =
-        '$orderFolderPath/${generateFileName(projectName, orderName, releaseName)}'
-            .replaceAll(' ', '');
+        '$orderFolderPath/${generateFileName(projectName, orderName, releaseName)}';
     final releaseFile = File(releaseFilePath);
 
     if (await releaseFile.exists()) {
@@ -496,21 +506,41 @@ class FileServices {
     String order = pathSegments[pathSegments.length - 2]; // اسم الأوردر
     String project = pathSegments[pathSegments.length - 3]; // اسم المشروع
     String release = fileName.split('.').first.split('-').last;
-    String storagePath = 'files/$project/$order/$fileName';
-    pr('$storagePath\n$project\n$order\n$fileName\n$release');
 
     try {
-      // 1️⃣ حذف الملف من Storage
-      await _deleteFileFromFirebaseStorage(storagePath);
-      pr("🔥 تم حذف الملف من Firebase Storage: $storagePath");
-
       // حذف من Firestore
       CollectionReference tagsCollection =
           FirebaseFirestore.instance.collection('tags');
-      DocumentReference orderDoc =
-          tagsCollection.doc(project).collection('orders').doc(order);
 
+      // We need to find the correct project ID because the 'project' passed here
+      // might be locally sanitized (spaces removed), while the Firestore ID has spaces.
+      QuerySnapshot tagsSnapshot = await tagsCollection.get();
+      String actualProjectId = tagsSnapshot.docs
+          .firstWhere((doc) =>
+              doc.id.replaceAll(' ', '') == project.replaceAll(' ', ''))
+          .id;
+
+      DocumentReference projectDoc = tagsCollection.doc(actualProjectId);
+
+      // We need to find the correct order ID because the 'order' passed here
+      // might be locally sanitized (spaces removed), while the Firestore ID has spaces.
+      QuerySnapshot ordersSnapshot =
+          await projectDoc.collection('orders').get();
+      String actualOrderId = ordersSnapshot.docs
+          .firstWhere(
+              (doc) => doc.id.replaceAll(' ', '') == order.replaceAll(' ', ''))
+          .id;
+
+      DocumentReference orderDoc =
+          projectDoc.collection('orders').doc(actualOrderId);
       DocumentSnapshot orderSnapshot = await orderDoc.get();
+
+      String storagePath = 'files/$actualProjectId/$actualOrderId/$fileName';
+      pr('$storagePath\n$actualProjectId\n$actualOrderId\n$fileName\n$release');
+
+      // 1️⃣ حذف الملف من Storage
+      await _deleteFileFromFirebaseStorage(storagePath);
+      pr("🔥 تم حذف الملف من Firebase Storage: $storagePath");
 
       if (orderSnapshot.exists) {
         List<dynamic> releases = List.from(orderSnapshot['releases']);
@@ -531,7 +561,12 @@ class FileServices {
       }
 
       // 3️⃣ حذف الملف محليًا
-      String localPath = generateLocalFilePath(project, order, release);
+      String safeProjectName = project.replaceAll(' ', '');
+      String safeOrderName = order.replaceAll(' ', '');
+      String safeReleaseName = release.replaceAll(' ', '');
+
+      String localPath =
+          '${AppStrings.appFolderPath}/$safeProjectName/$safeOrderName/${generateFileName(safeProjectName, safeOrderName, safeReleaseName)}';
       File localFile = File(localPath);
 
       if (await localFile.exists()) {
