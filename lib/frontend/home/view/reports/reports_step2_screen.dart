@@ -144,7 +144,9 @@ class _ReportsStep2ScreenState extends State<ReportsStep2Screen> {
 
     List<String> headers = ex.headerRow;
 
-    int columnIndex = headers.indexOf(AppStrings.markColumn);
+    int columnIndex = headers.indexWhere((h) => 
+      h.toUpperCase() == AppStrings.markColumn.toUpperCase() || h.toUpperCase() == 'MARK'
+    );
     if (columnIndex == -1) {
       pr("❌ NotFound Column: MARK");
       return [];

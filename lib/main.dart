@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -7,7 +8,15 @@ import 'core/utils/global_functions.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(); // تهيئة Firebase
+  print('DEBUG: Starting Firebase initialization...');
+  try {
+    print('DEBUG: Options for Windows: ${DefaultFirebaseOptions.currentPlatform.appId}');
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    print('DEBUG: Firebase initialized successfully!');
+  } catch (e, stack) {
+    print('DEBUG: Firebase initialization failed: $e');
+    print('DEBUG: Stack trace: $stack');
+  }
   SystemChrome.setPreferredOrientations(
     [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown],
   );

@@ -38,10 +38,29 @@ class ExcelProvider with ChangeNotifier {
 
     if (currentIndex == -1) return [];
 
-    List<String> nextSteps = AuthorityModel.authos
-        .skip(currentIndex + 1)
-        .map((auth) => auth.name)
-        .toList();
+    List<String> nextSteps = [];
+
+    // Instead of linear skip, recursively or directly add all reachable states
+    // but a simpler fix is to use linear skip, BUT for Cutting explicitly add next steps.
+    void addNextSteps(int index) {
+      for (int dir in AuthorityModel.authos[index].dir) {
+        String nextName = AuthorityModel.authos[dir].name;
+        if (!nextSteps.contains(nextName)) {
+          nextSteps.add(nextName);
+          addNextSteps(dir);
+        }
+      }
+    }
+
+    if (AuthorityModel.authos[currentIndex].dir.isNotEmpty) {
+      addNextSteps(currentIndex);
+    }
+
+    // Fallback: Dispatch is always a "done" step since it has no dir
+    if (!nextSteps.contains("Dispatch") && currentStep != "Dispatch") {
+      nextSteps.add("Dispatch");
+    }
+
     notifyListeners();
     // تصفية الصفوف التي تنتمي إلى المراحل التالية فقط
     return allExcelData.where((row) {
@@ -86,18 +105,27 @@ class ExcelProvider with ChangeNotifier {
       if (headerRow.contains(AppStrings.stateColumn)) {
         underExcelData = [headerRow] +
             allExcelData.skip(1).where((row) {
-              return row.contains(currentStep);
+              return row.any((c) => c.toString().toLowerCase().contains(currentStep.toLowerCase()));
             }).toList();
       } else {
         underExcelData = [headerRow] + allExcelData.skip(1).toList();
       }
     } else {
       underExcelData = [headerRow] +
-          allExcelData.where((row) => row.contains(currentStep)).toList();
+          allExcelData.where((row) {
+            bool isTarget = row.any((c) => c.toString().toLowerCase().contains(currentStep.toLowerCase()));
+            if (currentStep.toLowerCase() == 'dispatch') {
+              isTarget = row.any((c) {
+                String cStr = c.toString().toLowerCase();
+                return cStr.contains('dispatch') && !cStr.contains('dispatched');
+              });
+            }
+            return isTarget;
+          }).toList();
     }
     pr('📂under-$currentStep: ${underExcelData.length}');
     dispatchedExcelData = [headerRow] +
-        allExcelData.where((row) => row.contains("✓✓Dispatched")).toList();
+        allExcelData.where((row) => row.any((c) => c.toString().toLowerCase().contains('dispatched'))).toList();
     pr('📂dispatched: ${dispatchedExcelData.length}');
     if (_isInitialStep(currentStep)) {
       doneExcelData = [headerRow] +
@@ -123,40 +151,47 @@ class ExcelProvider with ChangeNotifier {
     String? currentStep,
   }) {
     if (filterType == "All" && currentStep != null) {
-      if (_isInitialStep(currentStep)) {
-        enabledExcelRows = List.generate(allExcelData.length, (index) {
+      enabledExcelRows = List.generate(
+        allExcelData.length,
+        (index) {
           List<String> row = allExcelData[index];
+          bool isHold = holdExcelData.contains(row);
           bool isDone = doneExcelData.contains(row);
-
-          return !isDone;
-        });
-      } else {
-        enabledExcelRows = List.generate(
-          allExcelData.length,
-          (index) {
-            List<String> row = allExcelData[index];
-            bool isHold = holdExcelData.contains(row); // الصف في الـ Hold
-            bool isCurrentStep = row.contains(currentStep);
-            return isCurrentStep && !isHold;
-          },
-        );
-      }
+          
+          if (_isInitialStep(currentStep)) {
+             return !isDone;
+          } else {
+             bool isCurrentStep = row.any((cell) => cell.toString().toLowerCase().contains(currentStep.toLowerCase()));
+             if (currentStep.toLowerCase() == 'dispatch') {
+               isCurrentStep = row.any((c) {
+                 String cStr = c.toString().toLowerCase();
+                 return cStr.contains('dispatch') && !cStr.contains('dispatched');
+               });
+             }
+             return isCurrentStep && !isHold;
+          }
+        },
+      );
       selectedRows = List.generate(enabledExcelRows.length, (index) => false);
     } else if (filterType == "Under-$currentStep" && currentStep != null) {
-      if (_isInitialStep(currentStep)) {
-        enabledExcelRows = List.generate(allExcelData.length, (index) {
-          List<String> row = allExcelData[index];
-          bool isDone = doneExcelData.contains(row);
-          return !isDone;
-        });
-      } else {
-        enabledExcelRows = List.generate(underExcelData.length, (index) {
-          List<String> row = underExcelData[index];
-          bool isHold = holdExcelData.contains(row); // الصف في الـ Hold
-          bool isCurrentStep = row.contains(currentStep);
-          return isCurrentStep && !isHold;
-        });
-      }
+      enabledExcelRows = List.generate(underExcelData.length, (index) {
+        List<String> row = underExcelData[index];
+        bool isHold = holdExcelData.contains(row);
+        bool isDone = doneExcelData.contains(row);
+        
+        if (_isInitialStep(currentStep)) {
+           return !isDone;
+        } else {
+           bool isCurrentStep = row.any((cell) => cell.toString().toLowerCase().contains(currentStep.toLowerCase()));
+           if (currentStep.toLowerCase() == 'dispatch') {
+             isCurrentStep = row.any((c) {
+               String cStr = c.toString().toLowerCase();
+               return cStr.contains('dispatch') && !cStr.contains('dispatched');
+             });
+           }
+           return isCurrentStep && !isHold;
+        }
+      });
       selectedRows = List.generate(enabledExcelRows.length, (index) => false);
     } else if (filterType == "All" && currentStep == null) {
       enabledExcelRows = List.generate(allExcelData.length, (index) => true);
@@ -182,13 +217,39 @@ class ExcelProvider with ChangeNotifier {
     if (excelData == null || excelData.isEmpty) return 0.0;
 
     print("first row: ${excelData.first}");
-    print(
-        "index of weight: ${excelData.first.indexOf(AppStrings.markColumnWeight)}");
-    int columnIndex = excelData.first.indexOf(AppStrings.markColumnWeight);
+    int columnIndex = excelData.first.indexWhere((h) =>
+        h.toUpperCase() == AppStrings.markColumnWeight.toUpperCase());
+    print("index of weight: $columnIndex");
     if (columnIndex == -1) {
-      calculatePreprationTotalWeight(excelData);
-      notifyListeners();
-      return 0.0;
+      // Fallback: If T.WEIGHT is missing, try to multiply Unit Weight by QTY
+      int qtyColIndex = excelData.first.indexWhere((h) =>
+          h.toUpperCase().contains('QTY') &&
+          !h.toUpperCase().contains('POS QTY') &&
+          !h.toUpperCase().contains('POS_QTY'));
+      int weightColIndex = excelData.first.indexWhere((h) => 
+          h.toUpperCase() == 'WEIGHT');
+
+      if (qtyColIndex != -1 && weightColIndex != -1) {
+        print("Fallback to Unit Weight * QTY calculation");
+        double total = excelData.skip(1).fold(0.0, (total, row) {
+          if (row.length > qtyColIndex && row.length > weightColIndex) {
+            double unitWeight = double.tryParse(row[weightColIndex]) ?? 0.0;
+            int qty = int.tryParse(row[qtyColIndex]) ?? 0;
+            return total + (unitWeight * qty);
+          }
+          return total;
+        });
+        
+        _totalMarksWeight = double.parse(total.toStringAsFixed(1));
+        notifyListeners();
+        print('Calculated Fallback Total Weight: $_totalMarksWeight');
+        return _totalMarksWeight;
+      } else {
+        // If neither exists, fallback to standard preparation logic
+        calculatePreprationTotalWeight(excelData);
+        notifyListeners();
+        return 0.0; // The state is updated inside calculatePreprationTotalWeight
+      }
     } else {
       print("mark column index: $columnIndex");
 
@@ -212,12 +273,16 @@ class ExcelProvider with ChangeNotifier {
   double calculatePreprationTotalWeight(List<List<String>>? excelData) {
     if (excelData == null || excelData.isEmpty) return 0.0;
 
-    int column1Index =
-        excelData.first.indexOf(AppStrings.markColumnPrep1Weight);
-    int column2Index =
-        excelData.first.indexOf(AppStrings.markColumnPrep2Weight);
+    int column1Index = excelData.first.indexWhere((h) =>
+        h.toUpperCase() == AppStrings.markColumnPrep1Weight.toUpperCase());
+    int column2Index = excelData.first.indexWhere((h) =>
+        h.toUpperCase() == AppStrings.markColumnPrep2Weight.toUpperCase());
 
-    if (column1Index == -1 && column2Index == -1) return 0.0;
+    if (column1Index == -1 || column2Index == -1) {
+      _totalMarksWeight = 0.0;
+      notifyListeners();
+      return 0.0;
+    }
     double total = excelData.skip(1).fold(0.0, (tot, row) {
       double value1 = double.tryParse(row[column1Index]) ?? 0.0;
       double value2 = double.tryParse(row[column2Index]) ?? 0.0;
@@ -226,6 +291,36 @@ class ExcelProvider with ChangeNotifier {
     _totalMarksWeight = double.parse(total.toStringAsFixed(1));
     notifyListeners();
     return _totalMarksWeight;
+  }
+
+  double calculateWeightForQty(int rowIndex, int pushedQty) {
+    if (rowIndex < 0 || rowIndex >= allExcelData.length) return 0.0;
+
+    List<String> row = allExcelData[rowIndex];
+    int qtyColIndex = headerRow.indexWhere((h) =>
+        h.toUpperCase().contains('QTY') &&
+        !h.toUpperCase().contains('POS QTY') &&
+        !h.toUpperCase().contains('POS_QTY'));
+        
+    int weightColIndex = headerRow.indexOf(AppStrings.markColumnWeight);
+    int unitWeightColIndex = headerRow.indexWhere((h) => h.toUpperCase() == 'WEIGHT');
+
+    if (qtyColIndex == -1 || qtyColIndex >= row.length) return 0.0;
+
+    if (weightColIndex != -1 && weightColIndex < row.length) {
+      double totalWeight = double.tryParse(row[weightColIndex]) ?? 0.0;
+      int totalQty = int.tryParse(row[qtyColIndex]) ?? 0;
+
+      if (totalQty <= 0) return 0.0;
+
+      double unitWeight = totalWeight / totalQty;
+      return double.parse((unitWeight * pushedQty).toStringAsFixed(2));
+    } else if (unitWeightColIndex != -1 && unitWeightColIndex < row.length) {
+      double unitWeight = double.tryParse(row[unitWeightColIndex]) ?? 0.0;
+      return double.parse((unitWeight * pushedQty).toStringAsFixed(2));
+    }
+    
+    return 0.0;
   }
 
   bool isRowInUnHold(List<String> row) {
@@ -857,8 +952,10 @@ class ExcelProvider with ChangeNotifier {
     String sheetName = excel.tables.keys.first;
     Sheet sheet = excel[sheetName];
 
-    // Find the QTY column index
+    // Find the QTY column index and MARK WEIGHT column index
     int qtyColumnIndex = -1;
+    int weightColumnIndex = -1;
+
     for (int colIndex = 0; colIndex < sheet.rows[0].length; colIndex++) {
       var cellValue = sheet
               .cell(CellIndex.indexByColumnRow(
@@ -867,15 +964,46 @@ class ExcelProvider with ChangeNotifier {
               ?.toString()
               .toUpperCase() ??
           '';
-      if (cellValue.contains('QTY') && !cellValue.contains('POS QTY')) {
+      if (cellValue.contains('QTY') && !cellValue.contains('POS QTY') && !cellValue.contains('POS_QTY')) {
         qtyColumnIndex = colIndex;
-        break;
+      }
+      if (cellValue.contains(AppStrings.markColumnWeight.toUpperCase())) {
+        weightColumnIndex = colIndex;
       }
     }
 
     if (qtyColumnIndex == -1) {
       pr('❌ QTY column not found');
       return;
+    }
+
+    // Read the existing quantity and weight to calculate unit weight
+    double newWeight = 0.0;
+    if (weightColumnIndex != -1) {
+      var currentQtyValue = sheet
+          .cell(CellIndex.indexByColumnRow(
+              columnIndex: qtyColumnIndex, rowIndex: rowIndex))
+          .value
+          ?.toString();
+      var currentWeightValue = sheet
+          .cell(CellIndex.indexByColumnRow(
+              columnIndex: weightColumnIndex, rowIndex: rowIndex))
+          .value
+          ?.toString();
+
+      int currentQty = int.tryParse(currentQtyValue ?? '0') ?? 0;
+      double currentWeight = double.tryParse(currentWeightValue ?? '0.0') ?? 0.0;
+
+      if (currentQty > 0) {
+        double unitWeight = currentWeight / currentQty;
+        newWeight = unitWeight * newQty;
+      }
+      
+      // Update weight cell
+      sheet
+          .cell(CellIndex.indexByColumnRow(
+              columnIndex: weightColumnIndex, rowIndex: rowIndex))
+          .value = TextCellValue(newWeight.toStringAsFixed(2));
     }
 
     sheet
@@ -987,6 +1115,174 @@ class ExcelProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> duplicateRowAndAdvanceState(
+    BuildContext context,
+    int rowIndex,
+    int pushedQty,
+    List<int> nextDirs, {
+    required Future<void> Function() initFunction,
+    int? selectedDirId,
+  }) async {
+    var set = context.read<AppSettingsProvider>();
+    set.startLoad();
+    pr('Duplicating row $rowIndex with pushedQty $pushedQty');
+    var file = File(selectedFileLocalPath);
+    var bytes = file.readAsBytesSync();
+    var excel = Excel.decodeBytes(bytes);
+
+    String sheetName = excel.tables.keys.first;
+    Sheet sheet = excel[sheetName];
+
+    // Find the columns
+    int qtyColumnIndex = -1;
+    int weightColumnIndex = -1;
+    int statesColumnIndex = -1;
+
+    for (int colIndex = 0; colIndex < sheet.maxColumns; colIndex++) {
+      var cellValue = sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: colIndex, rowIndex: 0))
+          .value
+          ?.toString()
+          .toUpperCase() ?? '';
+
+      if (cellValue.contains('QTY') && !cellValue.contains('POS QTY') && !cellValue.contains('POS_QTY')) {
+        qtyColumnIndex = colIndex;
+      }
+      if (cellValue.contains(AppStrings.markColumnWeight.toUpperCase())) {
+        weightColumnIndex = colIndex;
+      }
+      if (cellValue == 'STATES') {
+        statesColumnIndex = colIndex;
+      }
+    }
+
+    // Determine target state
+    List<Map<String, dynamic>> projectAuthos = getAuthosForProject(selectedFileLocalPath);
+    String targetStateName = '';
+    if (nextDirs.isNotEmpty) {
+      int chosenDirId = selectedDirId ?? nextDirs.first;
+      if (chosenDirId >= 0 && chosenDirId < projectAuthos.length) {
+        targetStateName = projectAuthos[chosenDirId]['autho'];
+      }
+    }
+
+    if (qtyColumnIndex == -1 || statesColumnIndex == -1 || targetStateName.isEmpty) {
+      pr('❌ Cannot duplicate row: missing required columns or target state');
+      set.endLoad();
+      return;
+    }
+
+    // Calculate new weight
+    double newWeight = 0.0;
+    if (weightColumnIndex != -1) {
+      var currentWeightValue = sheet.cell(CellIndex.indexByColumnRow(columnIndex: weightColumnIndex, rowIndex: rowIndex)).value?.toString();
+      var currentQtyValue = sheet.cell(CellIndex.indexByColumnRow(columnIndex: qtyColumnIndex, rowIndex: rowIndex)).value?.toString();
+      int originalQty = int.tryParse(currentQtyValue ?? '0') ?? 0;
+      double currentWeight = double.tryParse(currentWeightValue ?? '0.0') ?? 0.0;
+
+      if (originalQty > 0) {
+        double unitWeight = currentWeight / originalQty;
+        newWeight = unitWeight * pushedQty;
+      }
+    }
+
+    // Read original row values for comparison
+    List<String> originalValues = [];
+    for (int colIndex = 0; colIndex < sheet.maxColumns; colIndex++) {
+      originalValues.add(sheet.cell(CellIndex.indexByColumnRow(columnIndex: colIndex, rowIndex: rowIndex)).value?.toString() ?? '');
+    }
+
+    // Check if an existing row with the identical specs and target state exists
+    int targetRowIndex = -1;
+    for (int r = 1; r < sheet.rows.length; r++) {
+      if (r == rowIndex) continue;
+
+      String rowState = sheet.cell(CellIndex.indexByColumnRow(columnIndex: statesColumnIndex, rowIndex: r)).value?.toString() ?? '';
+      if (rowState.toLowerCase() != targetStateName.toLowerCase()) {
+        continue;
+      }
+
+      bool isMatch = true;
+      for (int c = 0; c < sheet.maxColumns; c++) {
+        if (c == qtyColumnIndex || c == weightColumnIndex || c == statesColumnIndex) {
+          continue; // Ignore variance in qty, weight, and state
+        }
+        String cellVal = sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r)).value?.toString() ?? '';
+        if (cellVal != originalValues[c]) {
+          isMatch = false;
+          break;
+        }
+      }
+
+      if (isMatch) {
+        targetRowIndex = r;
+        break;
+      }
+    }
+
+    if (targetRowIndex != -1) {
+      // Merge into the existing row
+      var existingQtyStr = sheet.cell(CellIndex.indexByColumnRow(columnIndex: qtyColumnIndex, rowIndex: targetRowIndex)).value?.toString() ?? '0';
+      int existingQty = int.tryParse(existingQtyStr) ?? 0;
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: qtyColumnIndex, rowIndex: targetRowIndex)).value = TextCellValue((existingQty + pushedQty).toString());
+
+      if (weightColumnIndex != -1) {
+        var existingWeightStr = sheet.cell(CellIndex.indexByColumnRow(columnIndex: weightColumnIndex, rowIndex: targetRowIndex)).value?.toString() ?? '0.0';
+        double existingWeight = double.tryParse(existingWeightStr) ?? 0.0;
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: weightColumnIndex, rowIndex: targetRowIndex)).value = TextCellValue((existingWeight + newWeight).toStringAsFixed(2));
+      }
+      pr('✅ Merged $pushedQty items into existing row $targetRowIndex for $targetStateName');
+    } else {
+      // Find the mark column index
+      int markColumnIndex = -1;
+      for (int colIndex = 0; colIndex < sheet.maxColumns; colIndex++) {
+        var cellValue = sheet.cell(CellIndex.indexByColumnRow(columnIndex: colIndex, rowIndex: 0)).value?.toString().toUpperCase() ?? '';
+        if (cellValue == AppStrings.markColumn.toUpperCase() || cellValue == 'MARK') {
+          markColumnIndex = colIndex;
+          break;
+        }
+      }
+
+      int insertIndex = rowIndex + 1; // Default to immediately underneath the source row
+      if (markColumnIndex != -1 && markColumnIndex < originalValues.length) {
+        String originalMark = originalValues[markColumnIndex];
+        // Scan down to find the very end of this MARK group
+        for (int r = rowIndex + 1; r < sheet.rows.length; r++) {
+          String currentMark = sheet.cell(CellIndex.indexByColumnRow(columnIndex: markColumnIndex, rowIndex: r)).value?.toString() ?? '';
+          if (currentMark == originalMark) {
+            insertIndex = r + 1;
+          } else if (currentMark.isNotEmpty && currentMark != "-") {
+            // Reached a new MARK block, break here
+            break;
+          }
+        }
+      }
+
+      // Prepare the brand new row
+      List<CellValue?> newRowValues = [];
+      for (int colIndex = 0; colIndex < sheet.maxColumns; colIndex++) {
+        var cellValue = sheet.cell(CellIndex.indexByColumnRow(columnIndex: colIndex, rowIndex: rowIndex)).value;
+        newRowValues.add(cellValue);
+      }
+
+      newRowValues[qtyColumnIndex] = TextCellValue(pushedQty.toString());
+      if (weightColumnIndex != -1) {
+        newRowValues[weightColumnIndex] = TextCellValue(newWeight.toStringAsFixed(2));
+      }
+      newRowValues[statesColumnIndex] = TextCellValue(targetStateName);
+
+      // Insert it exactly below the MARK group instead of appending to the bottom
+      sheet.insertRowIterables(newRowValues, insertIndex);
+      pr('✅ Successfully duplicated row and moved $pushedQty items to $targetStateName at row $insertIndex');
+    }
+
+    await saveChanges(context, excel);
+    await initFunction();
+
+    set.endLoad();
+    notifyListeners();
+  }
+
   Future<void> _updateStateForRow(
     Sheet sheet,
     int rowIndex,
@@ -1000,44 +1296,63 @@ class ExcelProvider with ChangeNotifier {
               .cell(CellIndex.indexByColumnRow(
                   columnIndex: statesColumnIndex, rowIndex: rowIndex))
               .value
-              ?.toString() ??
+              ?.toString()
+              .trim() ??
           '';
 
       var authoEntry = authos.firstWhere(
-          (entry) => entry['autho'] == currentAutho,
+          (entry) =>
+              entry['autho'].toString().toLowerCase() ==
+              currentAutho.toLowerCase(),
           orElse: () => {});
-      print(authoEntry);
+
+      // If we couldn't strictly find it, but it's clearly cutting, manually set it
+      if (authoEntry.isEmpty &&
+          currentAutho.toLowerCase().contains('cutting')) {
+        authoEntry = authos.firstWhere(
+            (entry) => entry['autho'].toString().toLowerCase() == 'cutting',
+            orElse: () => {});
+      }
+
+      print('=== DEBUG STATE TRANSITION ===');
+      print('Current Autho: $currentAutho');
+      print('Autho Entry: $authoEntry');
+      print('Next Dirs: $nextDirs');
+      print('Selected Dir ID: $selectedDirId');
+
       if (nextDirs.isNotEmpty && authoEntry.isNotEmpty) {
-        print("selected Id From Dir: $selectedDirId");
-
         int chosenDirId = selectedDirId ?? nextDirs.first;
-
         var nextAuthoEntry = authos[chosenDirId];
-        print("nextAutho is : $nextAuthoEntry");
+        print("Next Autho Entry: $nextAuthoEntry");
+
         String initialState =
             AuthorityModel.getInitialState(selectedFileLocalPath);
         String nextState =
             nextAuthoEntry.isNotEmpty ? nextAuthoEntry['autho'] : initialState;
-        print("next state is: $nextState");
+        print("Next State Will Be: $nextState");
+
         sheet
             .cell(
               CellIndex.indexByColumnRow(
                   columnIndex: statesColumnIndex, rowIndex: rowIndex),
             )
             .value = TextCellValue(nextState);
-        notifyListeners();
+      } else {
+        print(
+            'Skipping transition because nextDirs is empty or authoEntry is empty');
       }
+
       if (nextDirs.isEmpty) {
         String nextState = '✓✓Dispatched';
-        print("next step: $nextState");
+        print("next step (dispatch logic): $nextState");
         sheet
             .cell(CellIndex.indexByColumnRow(
                 columnIndex: statesColumnIndex, rowIndex: rowIndex))
             .value = TextCellValue(nextState);
-        notifyListeners();
       }
+      print('=============================');
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<void> updateCompletedPositionAtPrep(

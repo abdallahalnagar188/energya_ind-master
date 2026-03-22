@@ -20,6 +20,7 @@ class ExcelDataBody extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final List<List<String>> currentExcelData;
   final List<List<String>> searchedExcelData;
+  final bool showPushActions;
 
   const ExcelDataBody({
     required this.title,
@@ -27,6 +28,7 @@ class ExcelDataBody extends StatelessWidget {
     required this.onRefresh,
     required this.currentExcelData,
     required this.searchedExcelData,
+    this.showPushActions = true,
     super.key,
   });
 
@@ -72,6 +74,7 @@ class ExcelDataBody extends StatelessWidget {
       isPro: true,
       withActions: excel.enabledExcelRows.isNotEmpty,
       moreDirs: moreDirs,
+      showPushActions: showPushActions,
       dispatchTap: (row) => _showDispatchDialog(context, excel, row),
       actionTap: (row) async {
         await _handleActionTap(context, excel, row);
@@ -140,43 +143,25 @@ class ExcelDataBody extends StatelessWidget {
     List<String> row, {
     int? selectedDirId,
   }) async {
-    // For Cutting, show quantity dialog before pushing to Visual
-    if (title == AuthorityModel.authos[8].name) {
-      await _showCuttingQuantityDialog(context, excel, row,
-          selectedDirId: selectedDirId);
-      return;
-    }
-
-    // Use project-aware authos for state transitions
-    var projectAuthos = getAuthosForProject(excel.selectedFileLocalPath);
-    pr("selected row: $row");
-    pr("${projectAuthos.firstWhere((a) => a['autho'] == title, orElse: () => {})['dir'] as List<int>}");
-    pr("selected: $selectedDirId");
-
-    await excel.checkAndUpdateStates(
-      context,
-      excel.allExcelData.indexOf(row),
-      projectAuthos.firstWhere((a) => a['autho'] == title,
-          orElse: () => {})['dir'] as List<int>,
-      initFunction: onRefresh,
-      selectedDirId: selectedDirId,
-    );
+    // Show quantity dialog before pushing to the next step, for all steps unconditionally.
+    await _showQuantityDialog(context, excel, row,
+        selectedDirId: selectedDirId);
   }
 
-  /// Shows a dialog to enter the quantity to push from Cutting to Visual.
+  /// Shows a dialog to enter the quantity to push to the next step.
   /// Pre-fills with the current QTY value of the row.
   /// On confirm: deducts pushed qty, updates QTY in Excel, then changes state.
-  Future<void> _showCuttingQuantityDialog(
+  Future<void> _showQuantityDialog(
     BuildContext context,
     ExcelProvider excel,
     List<String> row, {
     int? selectedDirId,
   }) async {
-    await showDialog(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        return _CuttingQuantityDialog(
+        return _QuantityDialog(
           excel: excel,
           row: row,
           title: title,
@@ -185,6 +170,79 @@ class ExcelDataBody extends StatelessWidget {
         );
       },
     );
+
+    if (result == null || !context.mounted) return;
+
+    final int pushedQty = result['pushedQty'];
+    final int remainingQty = result['remainingQty'];
+    final double totalPushedWeight = result['totalPushedWeight'];
+    
+    final int rowIndex = excel.allExcelData.indexOf(row);
+    if (rowIndex == -1) return;
+
+    // Update QTY in Excel first if there's a remainder (partial push)
+    // If remainingQty == 0, we don't update qty to 0 before transitioning state.
+    if (remainingQty > 0) {
+      await excel.updateQtyInExcel(context, rowIndex, remainingQty);
+    }
+
+    // Check if state is ALREADY at the targeted next step
+    int stateColIndex = excel.headerRow.indexOf(AppStrings.stateColumn);
+    String currentState = '';
+    if (stateColIndex != -1 && stateColIndex < row.length) {
+      currentState = row[stateColIndex];
+    }
+
+    if (context.mounted) {
+      var projectAuthos = getAuthosForProject(excel.selectedFileLocalPath);
+      final dirs = projectAuthos.firstWhere(
+          (a) => a['autho'] == title,
+          orElse: () => {})['dir'] as List<int>;
+          
+      String targetStateName = '';
+      if (dirs.isNotEmpty) {
+        int chosenDirId = selectedDirId ?? dirs.first;
+        if (chosenDirId >= 0 && chosenDirId < projectAuthos.length) {
+          targetStateName = projectAuthos[chosenDirId]['autho'];
+        }
+      }
+
+      bool isAlreadyTargetState = targetStateName.isNotEmpty && currentState.toLowerCase().contains(targetStateName.toLowerCase());
+
+      if (remainingQty == 0 && !isAlreadyTargetState) {
+        // If all quantity is pushed, advance state to target step
+        await excel.checkAndUpdateStates(
+          context,
+          rowIndex,
+          dirs,
+          initFunction: onRefresh,
+          selectedDirId: selectedDirId,
+        );
+      } else if (remainingQty > 0 && !isAlreadyTargetState) {
+        // Partial push: duplicate row for pushed quantity and advance state
+        await excel.duplicateRowAndAdvanceState(
+          context,
+          rowIndex,
+          pushedQty,
+          dirs,
+          initFunction: onRefresh,
+          selectedDirId: selectedDirId,
+        );
+      } else {
+        await onRefresh();
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Successfully pushed $pushedQty items. Total weight: ${totalPushedWeight.toStringAsFixed(2)} kg',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
   }
 
   void _showPreparationDialog(
@@ -248,14 +306,14 @@ class ExcelDataBody extends StatelessWidget {
   }
 }
 
-class _CuttingQuantityDialog extends StatefulWidget {
+class _QuantityDialog extends StatefulWidget {
   final ExcelProvider excel;
   final List<String> row;
   final String title;
   final Future<void> Function() onRefresh;
   final int? selectedDirId;
 
-  const _CuttingQuantityDialog({
+  const _QuantityDialog({
     required this.excel,
     required this.row,
     required this.title,
@@ -264,27 +322,25 @@ class _CuttingQuantityDialog extends StatefulWidget {
   });
 
   @override
-  State<_CuttingQuantityDialog> createState() => _CuttingQuantityDialogState();
+  State<_QuantityDialog> createState() => _QuantityDialogState();
 }
 
-class _CuttingQuantityDialogState extends State<_CuttingQuantityDialog> {
+class _QuantityDialogState extends State<_QuantityDialog> {
   late TextEditingController qtyController;
   String? errorText;
   int currentQty = 0;
   int qtyColIndex = -1;
   int stateColIndex = -1;
+  double totalPushedWeight = 0.0;
 
   @override
   void initState() {
     super.initState();
-    // Look up QTY column: might be 'QTY' or 'MARK QTY'
+    // Look up QTY column: might be 'QTY' or 'MARK QTY' (exclude position qty)
     qtyColIndex = widget.excel.headerRow.indexWhere((h) =>
-            h.toUpperCase().contains('QTY') &&
-            !h.toUpperCase().contains('POS QTY') // Avoid position qty
-        );
-    if (qtyColIndex == -1) {
-      qtyColIndex = widget.excel.headerRow.indexOf(AppStrings.qtyColum);
-    }
+        h.toUpperCase().contains('QTY') &&
+        !h.toUpperCase().contains('POS QTY') &&
+        !h.toUpperCase().contains('POS_QTY'));
 
     stateColIndex = widget.excel.headerRow.indexOf(AppStrings.stateColumn);
 
@@ -292,6 +348,12 @@ class _CuttingQuantityDialogState extends State<_CuttingQuantityDialog> {
       currentQty = int.tryParse(widget.row[qtyColIndex]) ?? 0;
     }
     qtyController = TextEditingController(text: currentQty.toString());
+    
+    // Initial weight calculation
+    final int rowIndex = widget.excel.allExcelData.indexOf(widget.row);
+    if (rowIndex != -1 && currentQty > 0) {
+      totalPushedWeight = widget.excel.calculateWeightForQty(rowIndex, currentQty);
+    }
   }
 
   @override
@@ -306,8 +368,7 @@ class _CuttingQuantityDialogState extends State<_CuttingQuantityDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Row(
         children: [
-          Icon(Icons.content_cut,
-              color: AppStaticColor.primary, size: 22),
+          Icon(Icons.content_cut, color: AppStaticColor.primary, size: 22),
           SizedBox(width: 8),
           Text(
             'Push to Visual',
@@ -338,12 +399,36 @@ class _CuttingQuantityDialogState extends State<_CuttingQuantityDialog> {
                 prefixIcon:
                     const Icon(Icons.numbers, color: AppStaticColor.primary),
               ),
-              onChanged: (_) {
+              onChanged: (text) {
                 if (errorText != null) {
                   setState(() => errorText = null);
                 }
+                final int? pushedQty = int.tryParse(text.trim());
+                if (pushedQty != null && pushedQty > 0 && pushedQty <= currentQty) {
+                  final int rowIndex = widget.excel.allExcelData.indexOf(widget.row);
+                  if (rowIndex != -1) {
+                    setState(() {
+                      totalPushedWeight = widget.excel.calculateWeightForQty(rowIndex, pushedQty);
+                    });
+                  }
+                } else {
+                  setState(() {
+                    totalPushedWeight = 0.0;
+                  });
+                }
               },
             ),
+            if (totalPushedWeight > 0.0)
+              Padding(
+                padding: const EdgeInsets.only(top: 12.0),
+                child: Text(
+                  'Total Weight for pushed item: ${totalPushedWeight.toStringAsFixed(2)} kg',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppStaticColor.primary,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -372,43 +457,13 @@ class _CuttingQuantityDialogState extends State<_CuttingQuantityDialog> {
               return;
             }
 
-            Navigator.of(context).pop();
-
             final int remainingQty = currentQty - pushedQty;
-            final int rowIndex = widget.excel.allExcelData.indexOf(widget.row);
-
-            // Update QTY in Excel first
-            await widget.excel
-                .updateQtyInExcel(context, rowIndex, remainingQty);
-
-            // Check if state is ALREADY Visual (because they just re-pushed another qty)
-            String currentState = '';
-            if (stateColIndex != -1 && stateColIndex < widget.row.length) {
-              currentState = widget.row[stateColIndex];
-            }
-
-            if (context.mounted) {
-              // If already Visual, we don't try to push to the next state, just re-refresh
-              if (currentState == AuthorityModel.authos[8].name ||
-                  currentState == 'Visual' ||
-                  currentState.contains('Visual')) {
-                await widget.onRefresh();
-              } else {
-                var projectAuthos =
-                    getAuthosForProject(widget.excel.selectedFileLocalPath);
-                final dirs = projectAuthos.firstWhere(
-                    (a) => a['autho'] == widget.title,
-                    orElse: () => {})['dir'] as List<int>;
-
-                await widget.excel.checkAndUpdateStates(
-                  context,
-                  rowIndex,
-                  dirs,
-                  initFunction: widget.onRefresh,
-                  selectedDirId: widget.selectedDirId,
-                );
-              }
-            }
+            
+            Navigator.of(context).pop({
+              'pushedQty': pushedQty,
+              'remainingQty': remainingQty,
+              'totalPushedWeight': totalPushedWeight,
+            });
           },
           child: const Text('Confirm',
               style:

@@ -1,4 +1,5 @@
 import 'package:energya_ind/core/config/app_colors.dart';
+import 'package:energya_ind/core/config/app_strings.dart';
 import 'package:energya_ind/core/helper/methods.dart';
 import 'package:energya_ind/core/helper/providers/excel_provider.dart';
 import 'package:energya_ind/core/models/authority_model.dart';
@@ -18,6 +19,7 @@ class ExcelTable extends StatefulWidget {
   final dynamic Function(List<String>, int)? moreDirsOnSelected;
   final bool moreDirs;
   final Function(List<String>)? dispatchTap;
+  final bool showPushActions;
 
   const ExcelTable({
     super.key,
@@ -31,6 +33,7 @@ class ExcelTable extends StatefulWidget {
     this.moreDirs = false,
     this.dispatchTap,
     required this.preprationsDone,
+    this.showPushActions = true,
   });
   @override
   ExcelTableState createState() => ExcelTableState();
@@ -148,6 +151,36 @@ class ExcelTableState extends State<ExcelTable> {
     bool isRowExist = excel.isRowInUnHold(
       widget.excelData.skip(1).toList()[rowIndex],
     );
+
+    bool showPushButtonLocal = widget.showPushActions;
+    if (widget.excelData.isNotEmpty) {
+      List<String> headerRow = widget.excelData.first;
+      int qtyColIndex = headerRow.indexWhere((h) =>
+          h.toUpperCase().contains('QTY') &&
+          !h.toUpperCase().contains('POS QTY') &&
+          !h.toUpperCase().contains('POS_QTY'));
+      if (qtyColIndex == -1) {
+        qtyColIndex = headerRow.indexOf(AppStrings.qtyColum);
+      }
+      int stateColIndex = headerRow.indexOf(AppStrings.stateColumn);
+
+      if (stateColIndex != -1 &&
+          qtyColIndex != -1 &&
+          filledRow.length > stateColIndex &&
+          filledRow.length > qtyColIndex) {
+        String state = filledRow[stateColIndex].trim().toLowerCase();
+        int qty = int.tryParse(filledRow[qtyColIndex].trim()) ?? 0;
+
+        if (qty == 0) {
+          showPushButtonLocal = false; // Hide push button globally if qty is 0 on the existing row
+        }
+
+        // Hide the push button if the row's actual state doesn't match the department we're currently viewing
+        if (widget.title != null && !state.contains(widget.title!.toLowerCase())) {
+          showPushButtonLocal = false;
+        }
+      }
+    }
     return [
       if (widget.withActions)
         DataCell(
@@ -171,9 +204,11 @@ class ExcelTableState extends State<ExcelTable> {
                     ),
                   ),
                 //for production
-                if (widget.isPro &&
+                if (showPushButtonLocal &&
+                    widget.isPro &&
                     widget.title != AuthorityModel.authos[6].name &&
                     widget.title != AuthorityModel.authos[0].name &&
+                    excel.enabledExcelRows.skip(1).toList().length > rowIndex &&
                     excel.enabledExcelRows.skip(1).toList()[rowIndex])
                   popActoionsMarkItemsForPops(
                     context,

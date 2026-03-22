@@ -66,10 +66,10 @@ class _ProductionStep2LayoutState extends State<MaterialStep2Layout> {
     initialPageVariables();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await excel.readExcelFile(context, widget.title);
-      excel.calculateTotalWeight(excel.allExcelData);
       setState(() {
         currentExcelData = getHoldFilteredData(excel, selectedState);
       });
+      excel.calculateTotalWeight(currentExcelData);
     });
   }
 

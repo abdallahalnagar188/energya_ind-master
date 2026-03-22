@@ -2,6 +2,7 @@ final holdFilters = ['All', 'Hold', 'Un-Hold'];
 final reportsFilters = [
   'All',
   'Hold',
+  'Under-Cutting',
   'Under-Prep',
   'Under-Assemp',
   'Under-Weld',

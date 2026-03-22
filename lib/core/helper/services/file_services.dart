@@ -9,6 +9,7 @@ import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart' as storage;
 import 'package:path_provider/path_provider.dart';
+import 'package:energya_ind/core/models/authority_model.dart';
 import '../methods.dart';
 
 class FileServices {
@@ -221,19 +222,6 @@ class FileServices {
     var excel = Excel.decodeBytes(bytes);
 
     try {
-      final sheet = excel.tables.keys.first;
-      final table = excel.tables[sheet]!;
-      final List<Data?> headerRow = table.rows[0];
-      // تحديد عمود "Mark"
-      final markColumnIndex = headerRow.indexWhere(
-          (cell) => cell?.value == TextCellValue(AppStrings.markColumn));
-      int weightColumnIndex = headerRow.indexWhere(
-          (cell) => cell?.value == TextCellValue(AppStrings.markColumnWeight));
-      final column1Index = headerRow.indexWhere((cell) =>
-          cell?.value == TextCellValue(AppStrings.markColumnPrep1Weight));
-      final column2Index = headerRow.indexWhere((cell) =>
-          cell?.value == TextCellValue(AppStrings.markColumnPrep2Weight));
-
       for (var table in excel.tables.keys) {
         var sheet = excel.tables[table];
 
@@ -275,6 +263,21 @@ class FileServices {
           }).toList();
         }).toList();
       }
+      
+      if (AuthorityModel.isTLProject(selectedFileLocalPath)) {
+        return tempData;
+      }
+      int markColumnIndex = tempData[0].indexWhere(
+          (col) => col.toUpperCase() == AppStrings.markColumn.toUpperCase());
+      int weightColumnIndex = tempData[0].indexWhere(
+          (col) => col.toUpperCase() == AppStrings.markColumnWeight.toUpperCase());
+      int column1Index = tempData[0].indexWhere(
+          (col) => col.toUpperCase() == AppStrings.markColumnPrep1Weight.toUpperCase());
+      int column2Index = tempData[0].indexWhere(
+          (col) => col.toUpperCase() == AppStrings.markColumnPrep2Weight.toUpperCase());
+
+      if (markColumnIndex == -1) markColumnIndex = 0; // fallback just in case to prevent crash
+
       if (weightColumnIndex == -1) {
         weightColumnIndex = tempData[0].length; // الفهرس الجديد
         for (var row in tempData) {
@@ -304,8 +307,8 @@ class FileServices {
         double totalWeight = 0.0;
         bool needsMerge = false;
         for (final row in rows) {
-          final value1 = double.tryParse(row[column1Index]) ?? 0.0;
-          final value2 = double.tryParse(row[column2Index]) ?? 0.0;
+          final value1 = column1Index != -1 ? (double.tryParse(row[column1Index]) ?? 0.0) : 0.0;
+          final value2 = column2Index != -1 ? (double.tryParse(row[column2Index]) ?? 0.0) : 0.0;
           totalWeight += value1 * value2;
           if (rows.length > 1) {
             needsMerge = true;
@@ -323,10 +326,38 @@ class FileServices {
         }
 
         if (needsMerge) {
-          mergedRow[weightColumnIndex] = totalWeight.toString();
+          if (column1Index != -1 && column2Index != -1) {
+            mergedRow[weightColumnIndex] = totalWeight.toString();
+          } else {
+            // If we don't have the columns to calculate totalWeight, keep the sum of existing weights
+            double existingWeightSum = 0.0;
+            // Also try looking for "WEIGHT" or similar unit weight if "T.WEIGHT" is 0
+            int fallbackWeightCol = tempData[0].indexWhere((col) => col.toUpperCase() == 'WEIGHT');
+            for (final r in rows) {
+              double parsedWeight = 0.0;
+              if (weightColumnIndex < r.length) {
+                parsedWeight = double.tryParse(r[weightColumnIndex]) ?? 0.0;
+              }
+              if (parsedWeight == 0.0 && fallbackWeightCol != -1 && fallbackWeightCol < r.length) {
+                parsedWeight = double.tryParse(r[fallbackWeightCol]) ?? 0.0;
+              }
+              existingWeightSum += parsedWeight;
+            }
+            mergedRow[weightColumnIndex] = existingWeightSum.toStringAsFixed(2);
+          }
         } else {
           // إذا كانت الصفوف لا تحتاج إلى دمج، نترك قيمة T.Weight كما هي
-          mergedRow[weightColumnIndex] = rows.first[weightColumnIndex];
+          double singleRowWeight = 0.0;
+          if (weightColumnIndex < rows.first.length) {
+            singleRowWeight = double.tryParse(rows.first[weightColumnIndex]) ?? 0.0;
+          }
+          if (singleRowWeight == 0.0) {
+              int fallbackWeightCol = tempData[0].indexWhere((col) => col.toUpperCase() == 'WEIGHT');
+              if (fallbackWeightCol != -1 && fallbackWeightCol < rows.first.length) {
+                singleRowWeight = double.tryParse(rows.first[fallbackWeightCol]) ?? 0.0;
+             }
+          }
+          mergedRow[weightColumnIndex] = singleRowWeight.toString();
         }
 
         // إضافة الصف المدمج إلى النتيجة

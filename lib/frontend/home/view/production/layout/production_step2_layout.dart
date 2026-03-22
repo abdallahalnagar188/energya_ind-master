@@ -60,7 +60,6 @@ class _ProductionStep2LayoutState extends State<ProductionStep2Layout> {
 
     await excel.readExcelFile(context, widget.title);
 
-    excel.calculateTotalWeight(excel.allExcelData);
     setState(() {
       currentExcelData = getProductionFilteredData(
         excel,
@@ -69,6 +68,7 @@ class _ProductionStep2LayoutState extends State<ProductionStep2Layout> {
         widget.isDispatch,
       );
     });
+    excel.calculateTotalWeight(currentExcelData);
     excel.filterExcelData(widget.title);
     setState(() {});
   }
@@ -148,6 +148,7 @@ class _ProductionStep2LayoutState extends State<ProductionStep2Layout> {
                 },
                 currentExcelData: currentExcelData,
                 searchedExcelData: searchedExcelData,
+                showPushActions: selectedState == 1,
               ),
               const SizedBox(height: 10),
             ],
@@ -201,7 +202,9 @@ class _ProductionStep2LayoutState extends State<ProductionStep2Layout> {
 
     List<String> headers = ex.headerRow;
 
-    int columnIndex = headers.indexOf(AppStrings.markColumn);
+    int columnIndex = headers.indexWhere((h) => 
+      h.toUpperCase() == AppStrings.markColumn.toUpperCase() || h.toUpperCase() == 'MARK'
+    );
     if (columnIndex == -1) {
       pr("❌ NotFound Column: MARK");
       return [];
