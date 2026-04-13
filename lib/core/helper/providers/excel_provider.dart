@@ -1638,4 +1638,76 @@ class ExcelProvider with ChangeNotifier {
     print("تم حذف العمود $columnName بنجاح.");
     notifyListeners();
   }
+
+  Future<Map<String, double>> calculateProjectAggregatedWeights({
+    required List<String> localFilePaths,
+    required BuildContext context,
+  }) async {
+    Map<String, double> aggregatedWeights = {
+       'Total': 0.0,
+       'Done': 0.0,
+       'Remaining': 0.0,
+       'Under Cutting': 0.0,
+       'Under Preparation': 0.0,
+       'Under Assembly': 0.0,
+       'Under Welding': 0.0,
+       'Under Visual': 0.0,
+       'Under Follow up': 0.0,
+       'Under Painting': 0.0,
+       'Under Galvanization': 0.0,
+       'Dispatch Yard': 0.0,
+    };
+
+    String originalSelectedFilePath = selectedFileLocalPath;
+    
+    for (String path in localFilePaths) {
+      selectedFileLocalPath = path;
+      File file = File(path);
+      if (await file.exists()) {
+        allExcelData = await _fileServices.readReportExcelFile(updatedFile: file, selectedFileLocalPath: path);
+        if (allExcelData.isNotEmpty) {
+          headerRow = allExcelData.first;
+          
+          double fileTotal = calculateTotalWeight(allExcelData);
+          aggregatedWeights['Total'] = (aggregatedWeights['Total']! + fileTotal);
+          
+          filterExcelData('Dispatch');
+          double fileDone = calculateTotalWeight(dispatchedExcelData);
+          aggregatedWeights['Done'] = (aggregatedWeights['Done']! + fileDone);
+
+          Map<String, String> statusMap = {
+            'Under Cutting': 'Cutting',
+            'Under Preparation': 'Preparation',
+            'Under Assembly': 'Assembly',
+            'Under Welding': 'Welding',
+            'Under Visual': 'Visual',
+            'Under Follow up': 'Follow up',
+            'Under Painting': 'Painting',
+            'Under Galvanization': 'Galvanization',
+            'Dispatch Yard': 'Dispatch',
+          };
+          
+          for (var entry in statusMap.entries) {
+            filterExcelData(entry.value);
+            double statusWeight = calculateTotalWeight(underExcelData);
+            aggregatedWeights[entry.key] = (aggregatedWeights[entry.key] ?? 0.0) + statusWeight;
+          }
+        }
+      }
+    }
+    
+    aggregatedWeights['Remaining'] = aggregatedWeights['Total']! - aggregatedWeights['Done']!;
+    
+    selectedFileLocalPath = originalSelectedFilePath;
+    if (selectedFileLocalPath.isNotEmpty && await File(selectedFileLocalPath).exists()) {
+       allExcelData = await _fileServices.readReportExcelFile(updatedFile: File(selectedFileLocalPath), selectedFileLocalPath: selectedFileLocalPath);
+       if (allExcelData.isNotEmpty) headerRow = allExcelData.first;
+    }
+    
+    aggregatedWeights.forEach((key, value) {
+      aggregatedWeights[key] = double.parse(value.toStringAsFixed(1));
+    });
+    
+    return aggregatedWeights;
+  }
 }

@@ -100,7 +100,7 @@ class _HomeViewBodyState extends State<HomeViewBody> {
         Padding(
           padding: const EdgeInsets.only(bottom: 12, right: 12, left: 12),
           child: MaterialListItem(
-            titel: 'Add Report',
+            titel: 'Reports',
             iconData: Icons.note_add,
             onTap: () => context.NavigatePushTo(
               AppRouters.kReportsPage,

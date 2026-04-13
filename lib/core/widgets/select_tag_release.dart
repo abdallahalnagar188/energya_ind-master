@@ -20,6 +20,7 @@ class SelectTagRelease extends StatefulWidget {
     this.isProd = false,
     this.filesInLocal,
     this.download,
+  this.onPrintProject,
   });
   final List<Map<String, dynamic>> searchedList;
   final Map<String, dynamic> selectedRelease;
@@ -37,6 +38,7 @@ class SelectTagRelease extends StatefulWidget {
       required String orderName,
       required String releaseName,
       required String firebasePath})? download;
+  final Function(String)? onPrintProject;
   @override
   State<SelectTagRelease> createState() => _SelectTagReleaseState();
 }
@@ -65,6 +67,7 @@ class _SelectTagReleaseState extends State<SelectTagRelease> {
                   filteredTags: widget.filteredTags,
                   filesInLocal: widget.filesInLocal,
                   isProd: widget.isProd,
+                  onPrintProject: widget.onPrintProject,
                 ),
               )
             : Expanded(

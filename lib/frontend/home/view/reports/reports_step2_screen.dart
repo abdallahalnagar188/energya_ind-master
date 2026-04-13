@@ -72,6 +72,7 @@ class _ReportsStep2ScreenState extends State<ReportsStep2Screen> {
               child: IconButton(
                 onPressed: () async {
                   await generateFilteredPdf(
+                    context,
                     currentExcelData,
                     ex.selectedFileLocalPath
                         .split('/')

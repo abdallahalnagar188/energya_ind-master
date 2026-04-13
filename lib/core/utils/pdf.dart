@@ -5,8 +5,11 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
+import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 
 Future<void> generateFilteredPdf(
+  BuildContext context,
   List<List<dynamic>> filteredData,
   String name,
   ExcelProvider ex,
@@ -200,5 +203,143 @@ Future<void> generateFilteredPdf(
   final file = File("${output.path}/$name.pdf");
   await file.writeAsBytes(await pdf.save());
   print('file path: ${file.path}');
-  OpenFile.open(file.path);
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => Scaffold(
+        appBar: AppBar(title: Text(name)),
+        body: PdfPreview(
+          build: (format) => pdf.save(),
+          allowPrinting: true,
+          allowSharing: true,
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> generateProjectFullReport(
+  BuildContext context,
+  String projectName,
+  Map<String, double> aggregatedWeights,
+) async {
+  final pdf = pw.Document();
+  final ByteData image = await rootBundle.load("images/logo.png");
+  Uint8List imageData = (image).buffer.asUint8List();
+  double s = 28;
+
+  pw.Container container(String header, String value) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(8),
+      margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      color: PdfColors.grey100,
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            '$header :',
+            style: pw.TextStyle(
+              fontSize: s,
+            ),
+          ),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontSize: s,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pdf.addPage(
+    pw.Page(
+      pageTheme: const pw.PageTheme(
+        margin: pw.EdgeInsets.all(20),
+        pageFormat: PdfPageFormat(595.28, 1400),
+      ),
+      build: (context) => pw.Center(
+        child: pw.Column(
+          mainAxisSize: pw.MainAxisSize.min,
+          children: [
+            pw.Row(
+              children: [
+                pw.Image(pw.MemoryImage(imageData), height: 100, width: 100),
+                pw.SizedBox(width: 20),
+                pw.Flexible(
+                  child: pw.Text(
+                    'Energya Steel Fabrication',
+                    style: pw.TextStyle(
+                      fontSize: 26,
+                      color: PdfColor.fromHex('#032352'),
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                )
+              ],
+            ),
+            pw.SizedBox(height: 20),
+            pw.Text(
+              "General Report",
+              style: pw.TextStyle(
+                fontSize: 40,
+                color: PdfColor.fromHex('#032352'),
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 30),
+            pw.Text(
+              projectName,
+              style: pw.TextStyle(
+                fontSize: 28,
+                color: PdfColor.fromHex('#032352'),
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 30),
+            pw.Expanded(
+              child: pw.Column(
+                mainAxisSize: pw.MainAxisSize.min,
+                children: [
+                  container('Total Weight', '${aggregatedWeights['Total']}'),
+                  container('Done Weight', '${aggregatedWeights['Done']}'),
+                  container('Remaining Weight', '${aggregatedWeights['Remaining']}'),
+                  pw.SizedBox(height: 30),
+                  container('Under Cutting', '${aggregatedWeights['Under Cutting'] ?? 0.0}'),
+                  container('Under Preparation', '${aggregatedWeights['Under Preparation'] ?? 0.0}'),
+                  container('Under Assembly', '${aggregatedWeights['Under Assembly'] ?? 0.0}'),
+                  container('Under Welding', '${aggregatedWeights['Under Welding'] ?? 0.0}'),
+                  container('Under Visual', '${aggregatedWeights['Under Visual'] ?? 0.0}'),
+                  container('Under Follow up', '${aggregatedWeights['Under Follow up'] ?? 0.0}'),
+                  container('Under Painting', '${aggregatedWeights['Under Painting'] ?? 0.0}'),
+                  container('Under Galvanization', '${aggregatedWeights['Under Galvanization'] ?? 0.0}'),
+                  container('Dispatch Yard', '${aggregatedWeights['Dispatch Yard'] ?? 0.0}'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  final output = await getTemporaryDirectory();
+  final sanitizedProjectName = projectName.replaceAll(' ', '_');
+  final file = File("${output.path}/${sanitizedProjectName}_Full_Report.pdf");
+  await file.writeAsBytes(await pdf.save());
+  print('file path: ${file.path}');
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => Scaffold(
+        appBar: AppBar(title: Text('$projectName Report')),
+        body: PdfPreview(
+          build: (format) => pdf.save(),
+          allowPrinting: true,
+          allowSharing: true,
+        ),
+      ),
+    ),
+  );
 }

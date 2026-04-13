@@ -15,16 +15,20 @@ class TagsTreeView extends StatefulWidget {
     required this.select,
     required this.initSelectedRelease,
     this.filteredTags,
+    this.filter = false,
     this.isProd = false,
     this.filesInLocal,
     required this.download,
+    this.onPrintProject,
   });
   final Map<String, dynamic> selectedRelease;
   final Function(Map<String, dynamic>, String, String, String) select;
   final Function() initSelectedRelease;
   final Map<String, dynamic>? filteredTags;
   final List<Map<String, dynamic>>? filesInLocal;
+  final bool filter;
   final bool isProd;
+  final Function(String)? onPrintProject;
   final Future<void> Function(
       {required String projectName,
       required String orderName,
@@ -68,6 +72,16 @@ class _TagsTreeViewState extends State<TagsTreeView> {
                           : Icons.cancel_outlined,
                       color: AppStaticColor.primary.withValues(alpha: .8),
                       size: 20,
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.onPrintProject != null)
+                          IconButton(
+                            icon: const Icon(Icons.print_outlined),
+                            onPressed: () => widget.onPrintProject!(tagName),
+                          ),
+                      ],
                     ),
                     onTap: () {
                       setState(() {

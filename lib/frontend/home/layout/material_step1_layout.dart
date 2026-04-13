@@ -9,6 +9,7 @@ import 'package:energya_ind/core/widgets/progress.dart';
 import 'package:energya_ind/core/widgets/select_tag_release.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:energya_ind/core/utils/pdf.dart';
 
 class MaterialStep1Layout extends StatefulWidget {
   final String title;
@@ -159,6 +160,9 @@ class _ProductionStepLayoutState extends State<MaterialStep1Layout> {
             selectSearchedTag: _selectSearchedTag,
             initReleasePresed: _resetSelection,
             releasePressed: releasePressed,
+            onPrintProject: widget.isReport ? (projectName) async {
+               await _handlePrintProject(context, projectName);
+            } : null,
           ),
         ),
         const SizedBox(height: 16),
@@ -219,6 +223,66 @@ class _ProductionStepLayoutState extends State<MaterialStep1Layout> {
         },
       ),
     );
+  }
+
+  Future<void> _handlePrintProject(BuildContext context, String projectName) async {
+    var set = context.read<AppSettingsProvider>();
+    set.startLoad();
+    try {
+      List<String> localPaths = [];
+
+      Map<String, List<Map<String, dynamic>>>? orders = tagProvider.filteredTags[projectName];
+      if (orders != null) {
+        for (var entry in orders.entries) {
+          String orderId = entry.key;
+          List<Map<String, dynamic>> releases = entry.value;
+
+          for (var release in releases) {
+            String releaseName = release['release'].toString();
+
+            var fileData = filesInLocal.firstWhere(
+              (f) =>
+                  f['projectName'] == projectName &&
+                  f['orderName'] == orderId &&
+                  f['releaseName'] == releaseName,
+              orElse: () => <String, dynamic>{},
+            );
+
+            String? localPath;
+            if (fileData.isNotEmpty && fileData['isLocal'] == true) {
+               localPath = fileData['localFilePath'];
+            } else if (fileData.isNotEmpty && fileData['isLocal'] == false) {
+               localPath = await excel.saveFileLocaly(
+                 context,
+                 projectName: projectName,
+                 orderName: orderId,
+                 releaseName: releaseName,
+                 firebasePath: fileData['firebasePath'],
+               );
+               if (mounted) {
+                 filesInLocal = await excel.checkFilesIfInLocal(context, tagProvider.filteredTags);
+               }
+            }
+
+            if (localPath != null && localPath.isNotEmpty) {
+               localPaths.add(localPath);
+            }
+          }
+        }
+      }
+
+      if (localPaths.isNotEmpty) {
+        Map<String, double> aggregatedWeights = await excel.calculateProjectAggregatedWeights(
+          localFilePaths: localPaths,
+          context: context,
+        );
+        await generateProjectFullReport(context, projectName, aggregatedWeights);
+      }
+    } catch (e) {
+      pr('Error generating full report: $e');
+    } finally {
+      set.endLoad();
+    }
   }
 
   Future<void> _downloadFile({
