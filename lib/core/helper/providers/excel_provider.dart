@@ -1645,6 +1645,9 @@ class ExcelProvider with ChangeNotifier {
   }) async {
     Map<String, double> aggregatedWeights = {
        'Total': 0.0,
+       'Hold Marks': 0.0,
+       'Production-Done Marks': 0.0,
+       'Production-Remaining Marks': 0.0,
        'Done': 0.0,
        'Remaining': 0.0,
        'Under Cutting': 0.0,
@@ -1671,6 +1674,19 @@ class ExcelProvider with ChangeNotifier {
           double fileTotal = calculateTotalWeight(allExcelData);
           aggregatedWeights['Total'] = (aggregatedWeights['Total']! + fileTotal);
           
+          filterExcelData('');
+          double fileHold = calculateTotalWeight(holdExcelData);
+          aggregatedWeights['Hold Marks'] = (aggregatedWeights['Hold Marks']! + fileHold);
+
+          filterExcelData(AuthorityModel.authos[3].name);
+          double fileProductionDone = calculateTotalWeight(doneExcelData);
+          aggregatedWeights['Production-Done Marks'] = (aggregatedWeights['Production-Done Marks']! + fileProductionDone);
+
+          final doneSet = doneExcelData.skip(1).map((e) => e.join()).toSet();
+          final remainingList = [headerRow] + allExcelData.skip(1).where((item) => !doneSet.contains(item.join())).toList();
+          double fileProductionRemaining = calculateTotalWeight(remainingList);
+          aggregatedWeights['Production-Remaining Marks'] = (aggregatedWeights['Production-Remaining Marks']! + fileProductionRemaining);
+
           filterExcelData('Dispatch');
           double fileDone = calculateTotalWeight(dispatchedExcelData);
           aggregatedWeights['Done'] = (aggregatedWeights['Done']! + fileDone);
