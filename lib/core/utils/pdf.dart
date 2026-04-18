@@ -228,7 +228,7 @@ Future<void> generateProjectFullReport(
   Uint8List imageData = (image).buffer.asUint8List();
   double s = 28;
 
-  pw.Container container(String header, String value) {
+  pw.Container container(String header, String value, {double? fontSize, pw.FontWeight? fontWeight}) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(8),
       margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -239,13 +239,15 @@ Future<void> generateProjectFullReport(
           pw.Text(
             '$header :',
             style: pw.TextStyle(
-              fontSize: s,
+              fontSize: fontSize ?? s,
+              fontWeight: fontWeight,
             ),
           ),
           pw.Text(
             value,
             style: pw.TextStyle(
-              fontSize: s,
+              fontSize: fontSize ?? s,
+              fontWeight: fontWeight,
             ),
           ),
         ],
@@ -302,23 +304,22 @@ Future<void> generateProjectFullReport(
               child: pw.Column(
                 mainAxisSize: pw.MainAxisSize.min,
                 children: [
-                  container('Total Weight', '${aggregatedWeights['Total']}'),
-                  container('Hold Marks', '${aggregatedWeights['Hold Marks']}'),
+                  container('Total Weight', '${aggregatedWeights['Total'] ?? 0.0}', fontSize: 30, fontWeight: pw.FontWeight.bold),
+                  container('Dispatched Weight', '${aggregatedWeights['Done'] ?? 0.0}', fontSize: 30, fontWeight: pw.FontWeight.bold),
+                  container('Remaining Weight', '${aggregatedWeights['Remaining'] ?? 0.0}', fontSize: 30, fontWeight: pw.FontWeight.bold),
                   pw.SizedBox(height: 30),
+                  container('Hold Weight', '${aggregatedWeights['Hold Marks'] ?? 0.0}'),
                   container('Under Cutting', '${aggregatedWeights['Under Cutting'] ?? 0.0}'),
                   container('Under Preparation', '${aggregatedWeights['Under Preparation'] ?? 0.0}'),
                   container('Under Assembly', '${aggregatedWeights['Under Assembly'] ?? 0.0}'),
                   container('Under Welding', '${aggregatedWeights['Under Welding'] ?? 0.0}'),
                   container('Under Visual', '${aggregatedWeights['Under Visual'] ?? 0.0}'),
-                  container('Production-Done Marks', '${aggregatedWeights['Production-Done Marks']}'),
-                  container('Production-Remaining Marks', '${aggregatedWeights['Production-Remaining Marks']}'),
                   container('Under Follow up', '${aggregatedWeights['Under Follow up'] ?? 0.0}'),
                   container('Under Painting', '${aggregatedWeights['Under Painting'] ?? 0.0}'),
                   container('Under Galvanization', '${aggregatedWeights['Under Galvanization'] ?? 0.0}'),
                   container('Dispatch Yard', '${aggregatedWeights['Dispatch Yard'] ?? 0.0}'),
-                  pw.SizedBox(height: 30),
-                  container('Dispatched (Done Weight)', '${aggregatedWeights['Done']}'),
-                  container('Remaining Weight', '${aggregatedWeights['Remaining']}'),
+                  container('Production Done', '${aggregatedWeights['Production-Done Marks'] ?? 0.0}'),
+                  container('Production Remaining', '${aggregatedWeights['Production-Remaining Marks'] ?? 0.0}'),
                 ],
               ),
             ),
